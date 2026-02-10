@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>ABES CamConnect</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<h2>ABES CamConnect</h2>
+<p id="onlineCount">0 users online</p>
+
+
+<!-- ================= AUTH SECTION ================= -->
+<div id="auth">
+  <input id="email" placeholder="College email (@abes.ac.in)" />
+  <button id="sendOtp">Send OTP</button><br><br>
+
+  <input id="otp" placeholder="Enter OTP" />
+  <button id="verifyOtp">Verify</button>
+</div>
+
+
+<!-- ================= MAIN APP ================= -->
+<div id="chatApp" style="display:none;">
+
+  <!-- Status -->
+  <p id="status">Not connected</p>
+
+  <!-- ================= VIDEO SECTION ================= -->
+  <div class="video-container">
+
+    <div class="video-box">
+      <p>Your Camera</p>
+      <video id="localVideo" autoplay playsinline muted></video>
+    </div>
+
+    <div class="video-box">
+      <p>Partner Camera</p>
+      <video id="remoteVideo" autoplay playsinline></video>
+    </div>
+
+  </div>
+
+
+  <!-- ================= CONTROLS ================= -->
+  <div class="controls">
+    <button id="joinBtn">Join</button>
+    <button id="nextBtn" disabled>Next</button>
+    <button id="blockBtn">Block</button>
+    <button id="logoutBtn">Logout</button>
+  </div>
+
+
+  <!-- ================= CHAT SECTION ================= -->
+  <div id="chat" style="display:none;">
+    <div id="messages"></div>
+    <div class="chat-input">
+      <input id="msgInput" placeholder="Type a message..." />
+      <button id="sendBtn">Send</button>
+    </div>
+  </div>
+
+</div>
+
+
+<!-- ================= SCRIPTS ================= -->
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<script src="script.js"></script>
+
+</body>
+</html>
