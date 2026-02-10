@@ -1,10 +1,14 @@
-const BACKEND_URL = "https://abes-camconnect-backend.onrender.com/";
+const BACKEND_URL = "https://abes-camconnect-backend.onrender.com";
 
-const token = localStorage.getItem("token");
+let socket = null;
 
-const socket = io(BACKEND_URL, {
-  auth: { token }
-});
+function connectSocket() {
+  const token = localStorage.getItem("token");
+  socket = io(BACKEND_URL, {
+    auth: { token }
+  });
+}
+
 
 const remoteVideo = document.getElementById("remoteVideo");
 
@@ -69,6 +73,7 @@ window.onload = async () => {
   if (res.ok) {
     authDiv.style.display = "none";
     appDiv.style.display = "block";
+    connectSocket();
     startCamera();
   } else {
     localStorage.removeItem("token");
@@ -96,6 +101,7 @@ verifyOtp.onclick = async () => {
   if (res.ok) {
     const data = await res.json();
     localStorage.setItem("token", data.token);
+    connectSocket();
 
     authDiv.style.display = "none";
     appDiv.style.display = "block";

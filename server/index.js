@@ -14,7 +14,7 @@ const io = new Server(server, { cors: { origin: "*" } });
 
 /* ---------------- CONFIG ---------------- */
 
-const JWT_SECRET = "college_chat_secret";
+const JWT_SECRET = process.env.JWT_SECRET;
 
 // OTP memory store
 const otpStore = new Map();
@@ -23,8 +23,8 @@ const otpStore = new Map();
 const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
-    user: "collegechat.auth@gmail.com",
-    pass: "tkhk ajmt detg wlnb"
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS
   }
 });
 
