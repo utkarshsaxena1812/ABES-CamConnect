@@ -142,9 +142,10 @@ nextBtn.onclick = () => {
 };
 
 socket.on("online_count", (count) => {
-  onlineCountText.innerText = count + " users online";
+  if (onlineCountText) {
+    onlineCountText.innerText = count + " users online";
+  }
 });
-
 
 socket.on("waiting", () => {
   status.innerText = "Waiting for someone...";
