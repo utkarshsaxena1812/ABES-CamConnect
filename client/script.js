@@ -1,6 +1,8 @@
+const BACKEND_URL = "https://abes-camconnect-backend.onrender.com/";
+
 const token = localStorage.getItem("token");
 
-const socket = io("http://localhost:3000", {
+const socket = io(BACKEND_URL, {
   auth: { token }
 });
 
@@ -60,7 +62,7 @@ window.onload = async () => {
   const token = localStorage.getItem("token");
   if (!token) return;
 
-  const res = await fetch("http://localhost:3000/validate-token", {
+  const res = await fetch(BACKEND_URL + "/validate-token", {
     headers: { Authorization: token }
   });
 
@@ -76,7 +78,7 @@ window.onload = async () => {
 /* ---------- AUTH ---------- */
 
 sendOtp.onclick = async () => {
-  await fetch("http://localhost:3000/send-otp", {
+  await fetch(BACKEND_URL + "/send-otp", {
     method: "POST",
     headers: {"Content-Type": "application/json"},
     body: JSON.stringify({ email: email.value })
@@ -85,7 +87,7 @@ sendOtp.onclick = async () => {
 };
 
 verifyOtp.onclick = async () => {
-  const res = await fetch("http://localhost:3000/verify-otp", {
+  const res = await fetch(BACKEND_URL + "/verify-otp", {
     method: "POST",
     headers: {"Content-Type": "application/json"},
     body: JSON.stringify({ email: email.value, otp: otp.value })
