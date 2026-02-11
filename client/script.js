@@ -1,3 +1,5 @@
+window.addEventListener("DOMContentLoaded", () => {
+
 const BACKEND_URL = "https://abes-camconnect-backend.onrender.com";
 
 let socket = null;
@@ -269,5 +271,4 @@ function createPeerConnection() {
     peerConnection.addTrack(track, localStream);
   });
 }
-
-
+});
