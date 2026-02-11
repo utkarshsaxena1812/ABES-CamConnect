@@ -23,11 +23,16 @@ const JWT_SECRET = process.env.JWT_SECRET || "test_secret";
 /* -------- MAIL SETUP -------- */
 
 const transporter = nodemailer.createTransport({
-  service: "gmail",
+  host: "smtp.gmail.com",
+  port: 587,
+  secure: false,
   auth: {
-    user: EMAIL_USER,
-    pass: EMAIL_PASS
-  }
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS
+  },
+  connectionTimeout: 10000, // 10 sec
+  greetingTimeout: 10000,
+  socketTimeout: 10000
 });
 
 /* -------- OTP STORE -------- */
