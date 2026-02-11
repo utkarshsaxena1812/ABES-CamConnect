@@ -17,6 +17,7 @@ const sendOtp = document.getElementById("sendOtp");
 const verifyOtp = document.getElementById("verifyOtp");
 
 const logoutBtn = document.getElementById("logoutBtn");
+const blockBtn = document.getElementById("blockBtn");
 
 const joinBtn = document.getElementById("joinBtn");
 const nextBtn = document.getElementById("nextBtn");
@@ -110,62 +111,106 @@ function connectSocket() {
 
 /* ================= AUTH ================= */
 
-window.onload = async () => {
+/* ================= AUTO-LOGIN CHECK ================= */
+
+(async () => {
   const token = localStorage.getItem("token");
   if (!token) return;
 
-  const res = await fetch(BACKEND_URL + "/validate-token", {
-    headers: { Authorization: token }
-  });
+  try {
+    const res = await fetch(BACKEND_URL + "/validate-token", {
+      headers: { Authorization: token }
+    });
 
-  if (res.ok) {
-    authDiv.style.display = "none";
-    appDiv.style.display = "block";
-    connectSocket();
-    startCamera();
-  } else {
-    localStorage.removeItem("token");
+    if (res.ok) {
+      authDiv.style.display = "none";
+      appDiv.style.display = "block";
+      connectSocket();
+      startCamera();
+    } else {
+      localStorage.removeItem("token");
+    }
+  } catch {
+    // Server unreachable — stay on auth screen
   }
-};
+})();
 
 sendOtp.onclick = async () => {
+  const emailVal = email.value.trim();
+  if (!emailVal) { alert("Please enter your email"); return; }
+
+  sendOtp.disabled = true;
+  sendOtp.textContent = "Sending...";
+
   try {
     const res = await fetch(BACKEND_URL + "/send-otp", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: email.value })
+      body: JSON.stringify({ email: emailVal })
     });
 
     const data = await res.json();
 
     if (res.ok) {
-      alert("OTP sent");
+      alert("✅ OTP sent! Check your college email inbox (and spam folder).");
     } else {
-      alert(data.error || "Failed");
+      alert("❌ " + (data.error || "Failed to send OTP"));
     }
   } catch {
-    alert("Server connection failed");
+    alert("❌ Cannot reach server. Check your internet or the backend URL.");
+  } finally {
+    sendOtp.disabled = false;
+    sendOtp.textContent = "Send OTP";
   }
 };
 
 verifyOtp.onclick = async () => {
-  const res = await fetch(BACKEND_URL + "/verify-otp", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email: email.value, otp: otp.value })
-  });
+  const emailVal = email.value.trim();
+  const otpVal = otp.value.trim();
+  if (!emailVal || !otpVal) { alert("Please enter email and OTP"); return; }
 
-  if (res.ok) {
+  verifyOtp.disabled = true;
+  verifyOtp.textContent = "Verifying...";
+
+  try {
+    const res = await fetch(BACKEND_URL + "/verify-otp", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: emailVal, otp: otpVal })
+    });
+
     const data = await res.json();
-    localStorage.setItem("token", data.token);
 
-    authDiv.style.display = "none";
-    appDiv.style.display = "block";
+    if (res.ok) {
+      localStorage.setItem("token", data.token);
+      authDiv.style.display = "none";
+      appDiv.style.display = "block";
+      connectSocket();
+      startCamera();
+    } else {
+      alert("❌ " + (data.error || "Wrong OTP"));
+    }
+  } catch {
+    alert("❌ Cannot reach server.");
+  } finally {
+    verifyOtp.disabled = false;
+    verifyOtp.textContent = "Verify";
+  }
+};
 
-    connectSocket();
-    startCamera();
-  } else {
-    alert("Wrong OTP");
+blockBtn.onclick = () => {
+  if (confirm("Block this user?")) {
+    socket.emit("block");
+
+    if (peerConnection) {
+      peerConnection.close();
+      peerConnection = null;
+    }
+    remoteVideo.srcObject = null;
+    chatDiv.style.display = "none";
+    nextBtn.disabled = true;
+    status.innerText = "User blocked. Click Join to find someone new.";
+    joinBtn.disabled = false;
   }
 };
 
