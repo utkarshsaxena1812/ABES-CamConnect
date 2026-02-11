@@ -1,39 +1,10 @@
 window.addEventListener("DOMContentLoaded", () => {
 
-const BACKEND_URL = "https://abes-camconnect-backend.onrender.com";
+/* ================= CONFIG ================= */
 
-let socket = null;
+const BACKEND_URL = "https://abes-camconnect-backend.onrender.com"; // your Render URL
 
-function connectSocket() {
-  const token = localStorage.getItem("token");
-  socket = io(BACKEND_URL, {
-    auth: { token }
-  });
-}
-
-
-const remoteVideo = document.getElementById("remoteVideo");
-
-let peerConnection = null;
-
-const config = {
-  iceServers: [
-    // Google STUN
-    { urls: "stun:stun.l.google.com:19302" },
-
-    // Free public TURN (for development)
-    {
-      urls: [
-        "turn:openrelay.metered.ca:80",
-        "turn:openrelay.metered.ca:443",
-        "turn:openrelay.metered.ca:443?transport=tcp"
-      ],
-      username: "openrelayproject",
-      credential: "openrelayproject"
-    }
-  ]
-};
-
+/* ================= ELEMENTS ================= */
 
 const onlineCountText = document.getElementById("onlineCount");
 
@@ -57,12 +28,87 @@ const msgInput = document.getElementById("msgInput");
 const sendBtn = document.getElementById("sendBtn");
 
 const localVideo = document.getElementById("localVideo");
+const remoteVideo = document.getElementById("remoteVideo");
+
+/* ================= SOCKET ================= */
+
+let socket = null;
+let peerConnection = null;
 let localStream = null;
-
-
 let chatEnabled = false;
 
-/* ---------- AUTO LOGIN ---------- */
+function connectSocket() {
+  const token = localStorage.getItem("token");
+
+  socket = io(BACKEND_URL, {
+    auth: { token }
+  });
+
+  socket.on("online_count", (count) => {
+    if (onlineCountText) {
+      onlineCountText.innerText = count + " users online";
+    }
+  });
+
+  socket.on("waiting", () => {
+    status.innerText = "Waiting for someone...";
+  });
+
+  socket.on("matched", async (data) => {
+    status.innerText = "Connected with " + data.partnerName;
+    nextBtn.disabled = false;
+    chatDiv.style.display = "block";
+
+    createPeerConnection();
+
+    if (data.initiator) {
+      const offer = await peerConnection.createOffer();
+      await peerConnection.setLocalDescription(offer);
+      socket.emit("offer", offer);
+    }
+  });
+
+  socket.on("offer", async (offer) => {
+    createPeerConnection();
+    await peerConnection.setRemoteDescription(offer);
+
+    const answer = await peerConnection.createAnswer();
+    await peerConnection.setLocalDescription(answer);
+
+    socket.emit("answer", answer);
+  });
+
+  socket.on("answer", async (answer) => {
+    await peerConnection.setRemoteDescription(answer);
+  });
+
+  socket.on("ice-candidate", async (candidate) => {
+    if (peerConnection) {
+      await peerConnection.addIceCandidate(candidate);
+    }
+  });
+
+  socket.on("partner_left", () => {
+    status.innerText = "Partner disconnected";
+    chatDiv.style.display = "none";
+
+    if (peerConnection) {
+      peerConnection.close();
+      peerConnection = null;
+    }
+    remoteVideo.srcObject = null;
+  });
+
+  socket.on("rejoin", () => {
+    socket.emit("join");
+  });
+
+  socket.on("chat_message", (data) => {
+    addMessage(data.from, data.text);
+  });
+}
+
+/* ================= AUTH ================= */
 
 window.onload = async () => {
   const token = localStorage.getItem("token");
@@ -82,31 +128,41 @@ window.onload = async () => {
   }
 };
 
-/* ---------- AUTH ---------- */
-
 sendOtp.onclick = async () => {
-  await fetch(BACKEND_URL + "/send-otp", {
-    method: "POST",
-    headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({ email: email.value })
-  });
-  alert("OTP sent");
+  try {
+    const res = await fetch(BACKEND_URL + "/send-otp", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: email.value })
+    });
+
+    const data = await res.json();
+
+    if (res.ok) {
+      alert("OTP sent");
+    } else {
+      alert(data.error || "Failed");
+    }
+  } catch {
+    alert("Server connection failed");
+  }
 };
 
 verifyOtp.onclick = async () => {
   const res = await fetch(BACKEND_URL + "/verify-otp", {
     method: "POST",
-    headers: {"Content-Type": "application/json"},
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email: email.value, otp: otp.value })
   });
 
   if (res.ok) {
     const data = await res.json();
     localStorage.setItem("token", data.token);
-    connectSocket();
 
     authDiv.style.display = "none";
     appDiv.style.display = "block";
+
+    connectSocket();
     startCamera();
   } else {
     alert("Wrong OTP");
@@ -118,107 +174,32 @@ logoutBtn.onclick = () => {
   location.reload();
 };
 
-/* ---------- MATCH ---------- */
+/* ================= MATCH ================= */
 
 joinBtn.onclick = () => {
   joinBtn.disabled = true;
   nextBtn.disabled = true;
 
   socket.emit("join");
-  status.innerText = "Searching for users...";
+  status.innerText = "Searching...";
 };
-
 
 nextBtn.onclick = () => {
   nextBtn.disabled = true;
-  status.innerText = "Finding next user...";
 
   if (peerConnection) {
     peerConnection.close();
     peerConnection = null;
   }
   remoteVideo.srcObject = null;
-  chat.style.display = "none";
+  chatDiv.style.display = "none";
 
   socket.emit("next");
 };
 
-socket.on("online_count", (count) => {
-  if (onlineCountText) {
-    onlineCountText.innerText = count + " users online";
-  }
-});
-
-socket.on("waiting", () => {
-  status.innerText = "Waiting for someone...";
-});
-
-socket.on("matched", async (data) => {
-  joinBtn.disabled = true;
-  nextBtn.disabled = false;
-  chat.style.display = "block";
-  status.innerText = "Connected with " + data.partnerName;
-
-  createPeerConnection();
-
-  // Only initiator creates offer
-  if (data.initiator) {
-    const offer = await peerConnection.createOffer();
-    await peerConnection.setLocalDescription(offer);
-    socket.emit("offer", offer);
-  }
-});
-
-
-socket.on("offer", async (offer) => {
-  createPeerConnection();
-
-  await peerConnection.setRemoteDescription(offer);
-
-  const answer = await peerConnection.createAnswer();
-  await peerConnection.setLocalDescription(answer);
-
-  socket.emit("answer", answer);
-});
-
-socket.on("answer", async (answer) => {
-  await peerConnection.setRemoteDescription(answer);
-});
-
-socket.on("ice-candidate", async (candidate) => {
-  if (peerConnection) {
-    await peerConnection.addIceCandidate(candidate);
-  }
-});
-
-socket.on("rejoin", () => {
-  socket.emit("join");
-});
-
-socket.on("chat_ready", () => {
-  chatEnabled = true;
-});
-
-socket.on("partner_left", () => {
-  status.innerText = "Partner disconnected. Searching again...";
-  nextBtn.disabled = true;
-  joinBtn.disabled = true;
-  chat.style.display = "none";
-
-  // Clean video
-  if (peerConnection) {
-    peerConnection.close();
-    peerConnection = null;
-  }
-  remoteVideo.srcObject = null;
-});
-
-
-/* ---------- CHAT ---------- */
+/* ================= CHAT ================= */
 
 sendBtn.onclick = () => {
-  if (!chatEnabled) return;
-
   const msg = msgInput.value.trim();
   if (!msg) return;
 
@@ -227,16 +208,14 @@ sendBtn.onclick = () => {
   msgInput.value = "";
 };
 
-socket.on("chat_message", (data) => {
-  addMessage(data.from, data.text);
-});
-
 function addMessage(sender, text) {
-  const d = document.createElement("div");
-  d.innerText = sender + ": " + text;
-  messages.appendChild(d);
+  const div = document.createElement("div");
+  div.innerText = sender + ": " + text;
+  messages.appendChild(div);
   messages.scrollTop = messages.scrollHeight;
 }
+
+/* ================= CAMERA ================= */
 
 async function startCamera() {
   try {
@@ -245,30 +224,33 @@ async function startCamera() {
       audio: true
     });
     localVideo.srcObject = localStream;
-  } catch (err) {
-    console.log("Camera error:", err);
-    alert("Camera permission denied or not available");
+  } catch {
+    alert("Camera permission denied");
   }
 }
 
-function createPeerConnection() {
-  peerConnection = new RTCPeerConnection(config);
+/* ================= WEBRTC ================= */
 
-  // Send ICE candidates to partner
+function createPeerConnection() {
+  peerConnection = new RTCPeerConnection({
+    iceServers: [
+      { urls: "stun:stun.l.google.com:19302" }
+    ]
+  });
+
   peerConnection.onicecandidate = (event) => {
     if (event.candidate) {
       socket.emit("ice-candidate", event.candidate);
     }
   };
 
-  // Receive remote stream
   peerConnection.ontrack = (event) => {
     remoteVideo.srcObject = event.streams[0];
   };
 
-  // Add local tracks
   localStream.getTracks().forEach(track => {
     peerConnection.addTrack(track, localStream);
   });
 }
+
 });
