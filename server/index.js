@@ -6,27 +6,33 @@ import nodemailer from "nodemailer";
 import jwt from "jsonwebtoken";
 
 const app = express();
-app.use(cors());
+app.use(cors({
+  origin: "*"
+}));
 app.use(express.json());
 
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
 
-/* ---------------- CONFIG ---------------- */
+/* -------- ENV VARIABLES -------- */
 
-const JWT_SECRET = process.env.JWT_SECRET;
+const EMAIL_USER = process.env.EMAIL_USER;
+const EMAIL_PASS = process.env.EMAIL_PASS;
+const JWT_SECRET = process.env.JWT_SECRET || "test_secret";
 
-const otpStore = new Map();
+/* -------- MAIL SETUP -------- */
 
 const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS
+    user: EMAIL_USER,
+    pass: EMAIL_PASS
   }
 });
 
-/* ---------------- HELPERS ---------------- */
+/* -------- OTP STORE -------- */
+
+const otpStore = new Map();
 
 function generateOTP() {
   return Math.floor(100000 + Math.random() * 900000).toString();
@@ -39,12 +45,13 @@ function generateUsername() {
          b[Math.floor(Math.random()*b.length)];
 }
 
-/* ---------------- AUTH ROUTES ---------------- */
+/* -------- AUTH ROUTES -------- */
 
+// Send OTP
 app.post("/send-otp", async (req, res) => {
   const { email } = req.body;
 
-  console.log("OTP request for:", email);
+  if (!email) return res.status(400).json({ error: "Email required" });
 
   if (!email.endsWith("@abes.ac.in")) {
     return res.status(400).json({ error: "Use college email" });
@@ -55,30 +62,30 @@ app.post("/send-otp", async (req, res) => {
 
   try {
     await transporter.sendMail({
-      from: `"ABES CamConnect" <${process.env.EMAIL_USER}>`,
+      from: EMAIL_USER,
       to: email,
-      subject: "Your OTP",
+      subject: "ABES CamConnect OTP",
       text: `Your OTP is ${otp}`
     });
 
+    console.log("OTP sent to:", email);
     res.json({ success: true });
   } catch (err) {
-    console.error("Email error:", err);
+    console.log("Mail error:", err);
     res.status(500).json({ error: "Email failed" });
   }
 });
 
+// Verify OTP
 app.post("/verify-otp", (req, res) => {
   const { email, otp } = req.body;
 
   if (otpStore.get(email) === otp) {
     otpStore.delete(email);
 
-    const token = jwt.sign(
-      { email },
-      JWT_SECRET,
-      { expiresIn: "30d" }
-    );
+    const token = jwt.sign({ email }, JWT_SECRET, {
+      expiresIn: "30d"
+    });
 
     return res.json({ success: true, token });
   }
@@ -86,6 +93,7 @@ app.post("/verify-otp", (req, res) => {
   res.status(400).json({ error: "Invalid OTP" });
 });
 
+// Validate token
 app.get("/validate-token", (req, res) => {
   const token = req.headers.authorization;
 
@@ -99,15 +107,17 @@ app.get("/validate-token", (req, res) => {
   }
 });
 
-/* ---------------- SOCKET ---------------- */
+/* -------- SOCKET -------- */
 
 let waitingUser = null;
 
+// Online count
 setInterval(() => {
   io.emit("online_count", io.engine.clientsCount);
 }, 2000);
 
 io.on("connection", (socket) => {
+
   const token = socket.handshake.auth?.token;
 
   if (!token) {
@@ -128,6 +138,7 @@ io.on("connection", (socket) => {
   socket.partner = null;
   socket.username = generateUsername();
 
+  // Join matchmaking
   socket.on("join", () => {
     if (socket.state !== "idle") return;
 
@@ -154,52 +165,23 @@ io.on("connection", (socket) => {
         partnerName: socket.username,
         initiator: false
       });
-
-      socket.emit("chat_ready");
-      partner.emit("chat_ready");
     }
   });
 
-  socket.on("next", () => {
-    if (socket.state !== "matched") return;
-
-    const partnerSocket = io.sockets.sockets.get(socket.partner);
-    if (partnerSocket) {
-      partnerSocket.state = "idle";
-      partnerSocket.partner = null;
-      partnerSocket.emit("partner_left");
-    }
-
-    socket.state = "idle";
-    socket.partner = null;
-    socket.emit("rejoin");
-  });
-
-  socket.on("chat_message", (msg) => {
-    if (socket.state !== "matched") return;
-
-    const partnerSocket = io.sockets.sockets.get(socket.partner);
-    if (partnerSocket) {
-      partnerSocket.emit("chat_message", {
-        from: socket.username,
-        text: msg
-      });
-    }
-  });
-
+  // WebRTC signaling
   socket.on("offer", (offer) => {
-    const partnerSocket = io.sockets.sockets.get(socket.partner);
-    if (partnerSocket) partnerSocket.emit("offer", offer);
+    const p = io.sockets.sockets.get(socket.partner);
+    if (p) p.emit("offer", offer);
   });
 
   socket.on("answer", (answer) => {
-    const partnerSocket = io.sockets.sockets.get(socket.partner);
-    if (partnerSocket) partnerSocket.emit("answer", answer);
+    const p = io.sockets.sockets.get(socket.partner);
+    if (p) p.emit("answer", answer);
   });
 
-  socket.on("ice-candidate", (candidate) => {
-    const partnerSocket = io.sockets.sockets.get(socket.partner);
-    if (partnerSocket) partnerSocket.emit("ice-candidate", candidate);
+  socket.on("ice-candidate", (c) => {
+    const p = io.sockets.sockets.get(socket.partner);
+    if (p) p.emit("ice-candidate", c);
   });
 
   socket.on("disconnect", () => {
@@ -209,10 +191,10 @@ io.on("connection", (socket) => {
   });
 });
 
-/* ---------------- START SERVER ---------------- */
+/* -------- START -------- */
 
 const PORT = process.env.PORT || 3000;
 
 server.listen(PORT, () => {
-  console.log("Server running on port " + PORT);
+  console.log("Server running on port", PORT);
 });
