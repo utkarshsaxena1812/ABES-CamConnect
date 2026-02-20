@@ -1,22 +1,15 @@
-// ============================================================
-// CamConnect Server — Production Ready
-// Railway env vars needed:
-//   FRONTEND_URL  = https://your-app.vercel.app
-//   JWT_SECRET    = any long random string
-//   BREVO_USER    = your Brevo login email
-//   BREVO_PASS    = your Brevo SMTP key
-// ============================================================
 import express from "express";
 import http from "http";
 import { Server } from "socket.io";
 import cors from "cors";
-import nodemailer from "nodemailer";
 import jwt from "jsonwebtoken";
 
 const app = express();
 
-// ─── CORS ─────────────────────────────────────────────────
-const FRONTEND_URL = process.env.FRONTEND_URL || "*";
+const FRONTEND_URL   = process.env.FRONTEND_URL   || "*";
+const JWT_SECRET     = process.env.JWT_SECRET     || "college_chat_secret_change_me";
+const RESEND_API_KEY = process.env.RESEND_API_KEY || "";
+const PORT           = process.env.PORT           || 3000;
 
 app.use(cors({ origin: FRONTEND_URL, methods: ["GET", "POST"] }));
 app.use(express.json());
@@ -27,24 +20,39 @@ const io = new Server(server, {
   transports: ["websocket", "polling"],
 });
 
-// ─── CONFIG ───────────────────────────────────────────────
-const JWT_SECRET  = process.env.JWT_SECRET  || "college_chat_secret_change_me";
-const BREVO_USER  = process.env.BREVO_USER  || "";
-const BREVO_PASS  = process.env.BREVO_PASS  || "";
-const PORT        = process.env.PORT        || 3000;
-
 const otpStore = new Map();
-
-// ─── BREVO SMTP (replaces Gmail — works on Railway) ───────
-const transporter = nodemailer.createTransport({
-  host: "smtp-relay.brevo.com",
-  port: 587,
-  secure: false,
-  auth: { user: BREVO_USER, pass: BREVO_PASS },
-});
 
 function generateOTP() {
   return Math.floor(100000 + Math.random() * 900000).toString();
+}
+
+// ─── Send email via Resend HTTP API (no SMTP, no ports) ───
+async function sendEmail(to, otp) {
+  const res = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${RESEND_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      from: "CamConnect <onboarding@resend.dev>",
+      to: [to],
+      subject: "Your CamConnect OTP",
+      html: `
+        <div style="font-family:sans-serif;max-width:400px;margin:auto;padding:32px;border-radius:12px;border:1px solid #e5e7eb">
+          <h2 style="color:#3b55f6;margin-bottom:8px">◈ CamConnect</h2>
+          <p style="color:#374151">Your one-time password is:</p>
+          <div style="font-size:36px;font-weight:800;letter-spacing:8px;color:#0f1733;margin:16px 0">${otp}</div>
+          <p style="color:#6b7280;font-size:13px">Expires in 10 minutes. Do not share this with anyone.</p>
+        </div>
+      `,
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.message || "Resend API error");
+  }
+  return res.json();
 }
 
 // ─── HEALTH CHECK ─────────────────────────────────────────
@@ -61,19 +69,7 @@ app.post("/send-otp", async (req, res) => {
   otpStore.set(email, { otp, expires: Date.now() + 10 * 60 * 1000 });
 
   try {
-    await transporter.sendMail({
-      from: `"CamConnect" <${BREVO_USER}>`,
-      to: email,
-      subject: "Your CamConnect OTP",
-      html: `
-        <div style="font-family:sans-serif;max-width:400px;margin:auto;padding:32px;border-radius:12px;border:1px solid #e5e7eb">
-          <h2 style="color:#3b55f6;margin-bottom:8px">◈ CamConnect</h2>
-          <p style="color:#374151">Your one-time password is:</p>
-          <div style="font-size:36px;font-weight:800;letter-spacing:8px;color:#0f1733;margin:16px 0">${otp}</div>
-          <p style="color:#6b7280;font-size:13px">Expires in 10 minutes. Do not share this with anyone.</p>
-        </div>
-      `,
-    });
+    await sendEmail(email, otp);
     res.json({ success: true });
   } catch (err) {
     console.error("Mail error:", err.message);
